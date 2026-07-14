@@ -1,0 +1,6 @@
+{
+  "name": "Elderly Care Data Mining System",
+  "description": "An AI-powered data mining and predictive analytics platform for monitoring elderly health trends, behavioral clustering, medication association rules, and anomaly detection.",
+  "requestFramePermissions": [],
+  "majorCapabilities": ["MAJOR_CAPABILITY_SERVER_SIDE_GEMINI_API"]
+}
