@@ -10,6 +10,7 @@ import { GoogleGenAI, Type } from "@google/genai";
 import { createServer as createViteServer } from "vite";
 import { Resident, DailyLog, ClusterPoint, ClusterCentroid, AssociationRule, Anomaly, TrendMetric, MiningAnalysisResult } from "./src/types.js";
 
+dotenv.config({ path: ".env.local" });
 dotenv.config();
 
 const app = express();
@@ -687,6 +688,44 @@ async function runCompleteMiningPipeline(residentIdFilter?: string): Promise<Min
   };
 }
 
+// Helper function to call Gemini with a fallback model if the primary model is unavailable or rate limited.
+async function generateContentWithFallback(params: {
+  contents: any;
+  config?: any;
+}) {
+  const models = [
+    "gemini-3.5-flash",
+    "gemini-3.1-flash-lite",
+    "gemini-2.5-flash",
+    "gemini-1.5-flash"
+  ];
+  let lastError = null;
+
+  for (const model of models) {
+    try {
+      console.log(`[AI] Attempting generateContent using model: ${model}`);
+      const response = await ai.models.generateContent({
+        model,
+        contents: params.contents,
+        config: params.config,
+      });
+      console.log(`[AI] Success with model: ${model}`);
+      return response;
+    } catch (err: any) {
+      lastError = err;
+      console.warn(`[AI] Model ${model} failed:`, err.message || err);
+      
+      // If it is a bad request or authentication issue, fallback won't help, so throw immediately.
+      const status = err.status || (err.error && err.error.code);
+      if (status === 400 || status === 401 || status === 403) {
+        throw err;
+      }
+    }
+  }
+
+  throw lastError;
+}
+
 // ==========================================
 // EXPRESS ROUTE ENDPOINTS
 // ==========================================
@@ -761,9 +800,8 @@ app.post("/api/mining/analyze", async (req, res) => {
       `;
     }
 
-    // Call Gemini with the constructed prompt
-    const response = await ai.models.generateContent({
-      model: "gemini-3.5-flash",
+    // Call Gemini with the constructed prompt (supporting fallback models)
+    const response = await generateContentWithFallback({
       contents: promptText,
       config: {
         systemInstruction: "You are an expert Clinical Data Miner and Senior Geriatric Care Analyst. Your job is to parse statistical correlations, linear trend regression lines, Z-score outliers, and K-Means clinical clusters in a senior living facility, translating math into empathetic, high-utility, structured care directives. Use markdown bullets and structured sections. Avoid developer jargon (like process.env, arrays, or API keys). Speak with authoritative medical clarity."
@@ -817,8 +855,7 @@ app.post("/api/mining/chat", async (req, res) => {
       `;
     }
 
-    const response = await ai.models.generateContent({
-      model: "gemini-3.5-flash",
+    const response = await generateContentWithFallback({
       contents: [
         { text: systemContext },
         ...(history || []).map((h: any) => ({
